@@ -2,17 +2,20 @@ import type { Context, Hono } from 'hono';
 import type { ParentRow } from '../auth/session.js';
 import { hashSecret } from '../auth/password.js';
 import { cleanCount, cleanName, cleanPin, field } from '../http/read.js';
-import { difficultyLabel, formatWhen, operationLabel } from '../math/format.js';
+import { difficultyLabel, equation, formatDuration, formatWhen, operationLabel } from '../math/format.js';
 import { generateSet, isDifficulty, isOperationChoice } from '../math/generate.js';
 import {
   createChild,
   createProblemSet,
   findChildByNameForParent,
+  getSessionForParent,
   listChildren,
   listScores,
+  listSessionQuestions,
   listSets,
   type ChildSummary,
   type ScoreRow,
+  type SessionQuestion,
 } from '../store.js';
 import { Banner, Layout, render } from '../views/layout.js';
 import type { AppEnv } from '../app.js';
@@ -58,6 +61,63 @@ export function registerParentRoutes(app: Hono<AppEnv>): void {
     });
     return c.redirect('/parent', 303);
   });
+
+  app.get('/parent/attempts/:attemptId', async (c) => {
+    const parent = c.get('parent');
+    if (!parent) return c.redirect('/login', 303);
+    const session = await getSessionForParent(c.get('db'), c.req.param('attemptId'), parent.id);
+    if (!session) {
+      return render(
+        c,
+        <Layout title="Session" mode="parent" email={parent.email}>
+          <h1>That session is not here.</h1>
+          <p><a class="button" href="/parent">Back to the dashboard</a></p>
+        </Layout>,
+        404,
+      );
+    }
+    const questions = await listSessionQuestions(c.get('db'), session.id, session.set_id);
+    return render(
+      c,
+      <Layout title="Session" mode="parent" email={parent.email}>
+        <p class="eyebrow">{session.display_name}</p>
+        <h1>{operationLabel(session.operation)}</h1>
+        <section class="card">
+          <p>Started {formatWhen(session.started_at)}</p>
+          <p>{session.finished_at ? `Finished ${formatWhen(session.finished_at)}` : 'Still in progress'}</p>
+          <p>
+            Score {session.finished_at ? `${session.correct_count}/${session.total_count}` : `${session.correct_count}/${session.total_count} so far`}
+            {' · '}
+            Total time {formatDuration(session.total_ms)}
+          </p>
+          <ul class="timing-list">
+            {questions.map((question) => (
+              <li key={question.position}>
+                <span>
+                  {question.position}. {equation({
+                    left: question.left_value,
+                    right: question.right_value,
+                    operation: question.operation,
+                  })}
+                </span>
+                <span class={question.is_correct === 1 ? 'good' : question.is_correct === 0 ? 'miss' : 'hint'}>
+                  {questionLine(question)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <p><a class="button quiet" href="/parent">Back to the dashboard</a></p>
+      </Layout>,
+    );
+  });
+}
+
+function questionLine(question: SessionQuestion): string {
+  if (question.answered_at === null || question.is_correct === null) return 'Not answered yet';
+  const result = question.is_correct === 1 ? 'Correct' : 'Wrong';
+  const time = question.shown_at ? formatDuration(question.duration_ms ?? 0) : 'time not recorded';
+  return `${result} · ${time}`;
 }
 
 async function dashboard(
@@ -178,15 +238,19 @@ function ScoreList(props: { kids: ChildSummary[]; scores: ScoreRow[] }) {
               <ul class="score-list">
                 {rows.map((score) => (
                   <li class="score" key={score.id}>
-                    <span class="score-value">
-                      {score.finished_at ? `${score.correct_count}/${score.total_count}` : 'In progress'}
-                    </span>
-                    <span class="score-meta">
-                      {operationLabel(score.operation)} · {difficultyLabel(score.difficulty)}
-                      {score.finished_at ? '' : ` · ${score.correct_count}/${score.total_count}`}
-                      {' · '}
-                      {formatWhen(score.finished_at ?? score.started_at)}
-                    </span>
+                    <a href={`/parent/attempts/${score.id}`}>
+                      <span class="score-value">
+                        {score.finished_at ? `${score.correct_count}/${score.total_count}` : 'In progress'}
+                      </span>
+                      <span class="score-meta">
+                        {operationLabel(score.operation)} · {difficultyLabel(score.difficulty)}
+                        {score.finished_at ? '' : ` · ${score.correct_count}/${score.total_count}`}
+                        {' · '}
+                        {formatWhen(score.started_at)}
+                        {' · '}
+                        {formatDuration(score.total_ms)}
+                      </span>
+                    </a>
                   </li>
                 ))}
               </ul>

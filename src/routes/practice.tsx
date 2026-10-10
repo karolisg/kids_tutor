@@ -4,6 +4,7 @@ import { clearSession, startSession, writeSessionCookie } from '../auth/session.
 import { cleanName, cleanPin, field, parseIntegerAnswer } from '../http/read.js';
 import { checkAnswer } from '../math/generate.js';
 import { difficultyLabel, equation, formatWhen, operationLabel, scorePhrase } from '../math/format.js';
+import { buildAchievements, starLabel } from '../rewards/achievements.js';
 import {
   answerForProblem,
   childForPin,
@@ -12,11 +13,13 @@ import {
   getSetForParent,
   listAttemptAnswers,
   listSets,
+  markQuestionShown,
   nextVisibleProblem,
   openAttemptsForChild,
   recordAnswer,
   resumeOrStartAttempt,
   reviewAnswer,
+  rewardStats,
   type AttemptRow,
 } from '../store.js';
 import { padScript } from '../views/pad.js';
@@ -56,10 +59,11 @@ export function registerPracticeRoutes(app: Hono<AppEnv>): void {
     const child = c.get('child');
     if (!child) return c.redirect('/practice', 303);
     const db = c.get('db');
-    const [sets, open, finished] = await Promise.all([
+    const [sets, open, finished, stats] = await Promise.all([
       listSets(db, child.parent_id),
       openAttemptsForChild(db, child.id),
       finishedSetIds(db, child.id),
+      rewardStats(db, child.id),
     ]);
     const openBySet = new Map(open.map((attempt) => [attempt.set_id, attempt.id]));
     const finishedSet = new Set(finished);
@@ -68,6 +72,9 @@ export function registerPracticeRoutes(app: Hono<AppEnv>): void {
       <Layout title="Sets" mode="kid" childName={child.display_name} showParentLink={Boolean(c.get('parent'))}>
         <p class="eyebrow">Hi, {child.display_name}</p>
         <h1>Choose a set</h1>
+        <p class="hint">
+          <a href="/practice/achievements">{starLabel(stats.stars)}</a>
+        </p>
         {sets.length === 0 ? (
           <section class="card">
             <p>Nothing is ready yet. Ask a parent to make a set.</p>
@@ -113,6 +120,7 @@ export function registerPracticeRoutes(app: Hono<AppEnv>): void {
     if (attempt.finished_at) return c.redirect(`/practice/attempt/${attempt.id}/score`, 303);
     const problem = await nextVisibleProblem(c.get('db'), attempt);
     if (!problem) return c.redirect(`/practice/attempt/${attempt.id}/score`, 303);
+    await markQuestionShown(c.get('db'), attempt.id, problem.id);
     return problemPage(c, child, attempt, problem);
   });
 
@@ -129,6 +137,7 @@ export function registerPracticeRoutes(app: Hono<AppEnv>): void {
     if (given === null) return problemPage(c, child, attempt, problem, 'Enter a whole number.', 400);
     const expected = await answerForProblem(db, problem.id);
     if (expected === undefined) return missing(c, child);
+    await markQuestionShown(db, attempt.id, problem.id);
     const correct = checkAnswer({ answer: expected }, given);
     const finished = problem.position === attempt.total_count;
     try {
@@ -164,10 +173,10 @@ export function registerPracticeRoutes(app: Hono<AppEnv>): void {
           <p class="progress">Problem {answer.position} of {attempt.total_count}</p>
           <div class="feedback">
             <p class={answer.is_correct ? 'verdict good' : 'verdict miss'}>
-              {answer.is_correct ? 'Yes.' : 'Not this time.'}
+              {answer.is_correct ? 'Yes.' : 'Try again.'}
             </p>
-            <p class="equation">{shown} = {answer.answer}</p>
-            <p class="detail">You answered {answer.given_answer}.</p>
+            <p class="equation">{answer.is_correct ? `${shown} = ${answer.answer}` : shown}</p>
+            {answer.is_correct ? null : <p class="detail">You answered {answer.given_answer}.</p>}
             <a id="next-step" class="button" href={nextHref}>{nextLabel}</a>
           </div>
         </div>
@@ -191,6 +200,10 @@ export function registerPracticeRoutes(app: Hono<AppEnv>): void {
             <p class="eyebrow">{child.display_name}</p>
             <p class="score-value">{attempt.correct_count}/{attempt.total_count}</p>
             <p>{scorePhrase(attempt.correct_count, attempt.total_count)}</p>
+            <p>
+              {starLabel(attempt.correct_count)} from this set.{' '}
+              <a href="/practice/achievements">See achievements</a>
+            </p>
           </div>
           <ul class="recap">
             {answers.map((answer) => (
@@ -213,6 +226,69 @@ export function registerPracticeRoutes(app: Hono<AppEnv>): void {
       </Layout>,
     );
   });
+
+  app.get('/practice/achievements', async (c) => {
+    const child = c.get('child');
+    if (!child) return c.redirect('/practice', 303);
+    const stats = await rewardStats(c.get('db'), child.id);
+    const achievements = buildAchievements(stats);
+    return render(
+      c,
+      <Layout title="Achievements" mode="kid" childName={child.display_name} showParentLink={Boolean(c.get('parent'))}>
+        <p class="eyebrow">Rewards</p>
+        <h1>Achievements</h1>
+        <section class="card stars-card">
+          <p class="stars">{starLabel(stats.stars)}</p>
+          <p class="hint">One star for each correct answer. Badges appear here when you earn them.</p>
+        </section>
+        <div class="award-list">
+          {achievements.map((achievement) => {
+            const width = achievement.total === 0 ? 0 : Math.round((achievement.current / achievement.total) * 100);
+            return (
+              <article class={`award ${achievement.state}`} data-state={achievement.state} key={achievement.id}>
+                <div class={`medal medal-${achievement.badge}`} aria-hidden="true">{medalSymbol(achievement.badge)}</div>
+                <div>
+                  <h2>{achievement.title}</h2>
+                  <p>{achievement.description}</p>
+                  <p class="state-label">{stateLabel(achievement.state)} · {achievement.reward}</p>
+                  <p class="hint">{achievement.progress}</p>
+                  {achievement.state === 'earned' ? null : (
+                    <div class="track" aria-hidden="true">
+                      <div class="fill" style={`width: ${width}%`}></div>
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </Layout>,
+    );
+  });
+}
+
+function medalSymbol(badge: 'badge' | 'gold' | 'lightning' | 'streak'): string {
+  switch (badge) {
+    case 'badge':
+      return '★';
+    case 'gold':
+      return '✦';
+    case 'lightning':
+      return '⚡';
+    case 'streak':
+      return '↻';
+  }
+}
+
+function stateLabel(state: 'locked' | 'in_progress' | 'earned'): string {
+  switch (state) {
+    case 'locked':
+      return 'Locked';
+    case 'in_progress':
+      return 'In progress';
+    case 'earned':
+      return 'Earned';
+  }
 }
 
 function loginPage(message?: string) {

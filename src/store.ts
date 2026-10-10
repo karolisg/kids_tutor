@@ -3,6 +3,7 @@ import { hashSecret, verifySecret } from './auth/password.js';
 import type { ChildRow, ParentRow } from './auth/session.js';
 import type { SqlDatabase, SqlStatement } from './db/types.js';
 import type { Difficulty, OperationChoice, Problem } from './math/generate.js';
+import { isQuickAnswer, type RewardStats } from './rewards/achievements.js';
 
 export type ProblemSetRow = {
   id: string;
@@ -36,6 +37,21 @@ export type ScoreRow = AttemptRow & {
   operation: string;
   difficulty: string;
   display_name: string;
+  total_ms: number;
+};
+
+export type ParentSession = ScoreRow;
+
+export type SessionQuestion = {
+  position: number;
+  left_value: number;
+  right_value: number;
+  operation: string;
+  given_answer: number | null;
+  is_correct: number | null;
+  shown_at: string | null;
+  answered_at: string | null;
+  duration_ms: number | null;
 };
 
 export type StoredAnswer = {
@@ -203,7 +219,8 @@ export async function getSetForParent(
 export async function listScores(db: SqlDatabase, parentId: string): Promise<ScoreRow[]> {
   return db.all<ScoreRow>(
     `SELECT a.id, a.set_id, a.child_id, a.correct_count, a.total_count, a.started_at, a.finished_at,
-            s.operation, s.difficulty, c.display_name
+            s.operation, s.difficulty, c.display_name,
+            (SELECT COALESCE(SUM(aa.duration_ms), 0) FROM attempt_answers aa WHERE aa.attempt_id = a.id) AS total_ms
      FROM attempts a
      JOIN problem_sets s ON s.id = a.set_id
      JOIN children c ON c.id = a.child_id
@@ -286,6 +303,52 @@ export async function nextVisibleProblem(
   );
 }
 
+export async function getSessionForParent(
+  db: SqlDatabase,
+  attemptId: string,
+  parentId: string,
+): Promise<ParentSession | undefined> {
+  return db.get<ParentSession>(
+    `SELECT a.id, a.set_id, a.child_id, a.correct_count, a.total_count, a.started_at, a.finished_at,
+            s.operation, s.difficulty, c.display_name,
+            (SELECT COALESCE(SUM(aa.duration_ms), 0) FROM attempt_answers aa WHERE aa.attempt_id = a.id) AS total_ms
+     FROM attempts a
+     JOIN problem_sets s ON s.id = a.set_id
+     JOIN children c ON c.id = a.child_id
+     WHERE a.id = ? AND c.parent_id = ?`,
+    [attemptId, parentId],
+  );
+}
+
+export async function listSessionQuestions(
+  db: SqlDatabase,
+  attemptId: string,
+  setId: string,
+): Promise<SessionQuestion[]> {
+  return db.all<SessionQuestion>(
+    `SELECT p.position, p.left_value, p.right_value, p.operation,
+            aa.given_answer, aa.is_correct, aa.shown_at, aa.answered_at, aa.duration_ms
+     FROM problems p
+     LEFT JOIN attempt_answers aa ON aa.problem_id = p.id AND aa.attempt_id = ?
+     WHERE p.set_id = ?
+     ORDER BY p.position ASC`,
+    [attemptId, setId],
+  );
+}
+
+/** First time this question is shown. Later renders keep the original time. */
+export async function markQuestionShown(
+  db: SqlDatabase,
+  attemptId: string,
+  problemId: string,
+  shownAt: string = new Date().toISOString(),
+): Promise<void> {
+  await db.run(
+    'INSERT OR IGNORE INTO question_shows (attempt_id, problem_id, shown_at) VALUES (?, ?, ?)',
+    [attemptId, problemId, shownAt],
+  );
+}
+
 export async function answerForProblem(
   db: SqlDatabase,
   problemId: string,
@@ -308,11 +371,20 @@ export async function recordAnswer(
   },
 ): Promise<void> {
   const now = new Date().toISOString();
+  const shown = await db.get<{ shown_at: string }>(
+    'SELECT shown_at FROM question_shows WHERE attempt_id = ? AND problem_id = ?',
+    [input.attempt.id, input.problemId],
+  );
+  const shownAt = shown?.shown_at || now;
+  const shownMs = Date.parse(shownAt);
+  const answeredMs = Date.parse(now);
+  const durationMs =
+    Number.isFinite(shownMs) && Number.isFinite(answeredMs) ? Math.max(0, answeredMs - shownMs) : 0;
   const statements: SqlStatement[] = [
     {
       sql: `INSERT INTO attempt_answers
-        (id, attempt_id, problem_id, given_answer, is_correct, answered_at)
-        VALUES (?, ?, ?, ?, ?, ?)`,
+        (id, attempt_id, problem_id, given_answer, is_correct, answered_at, shown_at, duration_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       params: [
         randomUUID(),
         input.attempt.id,
@@ -320,6 +392,8 @@ export async function recordAnswer(
         input.given,
         input.correct ? 1 : 0,
         now,
+        shownAt,
+        durationMs,
       ],
     },
     {
@@ -364,4 +438,61 @@ export async function listAttemptAnswers(
      ORDER BY p.position ASC`,
     [attemptId],
   );
+}
+
+export async function rewardStats(db: SqlDatabase, childId: string): Promise<RewardStats> {
+  const attempts = await db.all<{
+    correct_count: number;
+    total_count: number;
+    started_at: string;
+    finished_at: string | null;
+  }>(
+    `SELECT correct_count, total_count, started_at, finished_at
+     FROM attempts WHERE child_id = ?`,
+    [childId],
+  );
+  const answers = await db.all<{ is_correct: number; duration_ms: number; shown_at: string }>(
+    `SELECT aa.is_correct, aa.duration_ms, aa.shown_at
+     FROM attempt_answers aa
+     JOIN attempts a ON a.id = aa.attempt_id
+     WHERE a.child_id = ?`,
+    [childId],
+  );
+
+  let finishedSets = 0;
+  let perfectSets = 0;
+  let bestCorrect = 0;
+  let bestTotal = 0;
+  let bestRatio = -1;
+  const days = new Set<string>();
+  for (const attempt of attempts) {
+    days.add(attempt.started_at.slice(0, 10));
+    if (!attempt.finished_at) continue;
+    finishedSets += 1;
+    if (attempt.total_count > 0 && attempt.correct_count === attempt.total_count) perfectSets += 1;
+    const ratio = attempt.total_count === 0 ? 0 : attempt.correct_count / attempt.total_count;
+    if (ratio > bestRatio || (ratio === bestRatio && attempt.correct_count > bestCorrect)) {
+      bestRatio = ratio;
+      bestCorrect = attempt.correct_count;
+      bestTotal = attempt.total_count;
+    }
+  }
+
+  let stars = 0;
+  let quickAnswers = 0;
+  for (const answer of answers) {
+    if (answer.is_correct === 1) stars += 1;
+    if (isQuickAnswer(answer.duration_ms, answer.shown_at)) quickAnswers += 1;
+  }
+
+  return {
+    finishedSets,
+    startedSets: attempts.length,
+    perfectSets,
+    bestCorrect,
+    bestTotal,
+    quickAnswers,
+    practiceDays: days.size,
+    stars,
+  };
 }

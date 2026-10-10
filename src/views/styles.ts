@@ -83,6 +83,8 @@ a:hover { color: var(--accent); }
 .nav {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.75rem;
 }
 
@@ -228,13 +230,17 @@ input, select {
 
 .child-name { font-weight: 700; }
 
-.score {
+.score a {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem 0.8rem;
   align-items: baseline;
   justify-content: space-between;
+  width: 100%;
+  color: inherit;
+  text-decoration: none;
 }
+.score a:hover .score-value { color: var(--accent-dark); }
 
 .score-meta, .set-meta { color: var(--muted); }
 
@@ -328,8 +334,59 @@ input, select {
   border-top: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }
-.recap .good { color: var(--good); }
-.recap .miss { color: #8a5a12; }
+.recap .good, .timing-list .good { color: var(--good); }
+.recap .miss, .timing-list .miss { color: #8a5a12; }
+
+.timing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0 0;
+}
+.timing-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.stars {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(2.2rem, 8vw, 3rem);
+  letter-spacing: -0.03em;
+}
+.stars-card { margin-bottom: 1rem; }
+.award-list { display: grid; gap: 0.75rem; }
+.award {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0.95rem 1rem;
+}
+.award h2 { margin-bottom: 0.15rem; }
+.award p { margin: 0.15rem 0; }
+.award .track { margin: 0.55rem 0 0.1rem; }
+.medal {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  font-size: 1.45rem;
+  background: #efe8da;
+}
+.award.earned .medal-badge { background: #d7f0e4; }
+.award.earned .medal-gold { background: #f6e2a8; }
+.award.earned .medal-lightning { background: #f8efb8; }
+.award.earned .medal-streak { background: #d7e8f6; }
+.award.locked .medal { opacity: 0.4; }
+.state-label { font-size: 0.92rem; font-weight: 700; }
 
 :focus-visible {
   outline: 3px solid #0f6e6b;

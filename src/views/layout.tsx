@@ -47,6 +47,7 @@ export const Layout: FC<{
             {mode === 'kid' ? (
               <>
                 {props.childName ? <span>{props.childName}</span> : <a href="/">Home</a>}
+                {props.childName ? <a href="/practice/achievements">Awards</a> : null}
                 {props.showParentLink ? <a href="/parent">Parent</a> : null}
                 {props.childName ? (
                   <form method="post" action="/practice/logout">

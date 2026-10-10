@@ -49,6 +49,18 @@ export function equation(problem: { left: number; right: number; operation: stri
   return `${problem.left} ${operationSymbol(problem.operation)} ${problem.right}`;
 }
 
+export function formatDuration(ms: number): string {
+  const safe = Number.isFinite(ms) ? Math.max(0, Math.round(ms)) : 0;
+  if (safe < 1000) return 'under 1 second';
+  const seconds = Math.round(safe / 1000);
+  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  const minuteLabel = minutes === 1 ? '1 min' : `${minutes} min`;
+  if (rest === 0) return minuteLabel;
+  return `${minuteLabel} ${rest} sec`;
+}
+
 export function formatWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';

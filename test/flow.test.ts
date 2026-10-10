@@ -13,9 +13,11 @@ const symbols: Record<string, (left: number, right: number) => number> = {
   '÷': (left, right) => left / right,
 };
 
-function showsNumber(html: string, value: number): boolean {
-  const region = html.match(/<div data-problem="open">[\s\S]*$/)?.[0] ?? html;
+function showsNumber(html: string, value: number, marker = 'data-problem="open"'): boolean {
+  const start = html.indexOf(marker);
+  const region = start === -1 ? html : html.slice(start);
   const cleaned = region
+    .replace(/<style>[\s\S]*?<\/style>/, '')
     .replace(/<p class="progress">[\s\S]*?<\/p>/, '')
     .replace(/<div class="pad"[\s\S]*?<\/div>/, '')
     .replace(/\/practice\/attempt\/[A-Za-z0-9_-]+/g, '')
@@ -109,6 +111,7 @@ test('a child solves a set without receiving answers early, and the parent sees 
   let page = await follow(app, jar, await send(app, jar, start[1], {}));
   let html = await page.text();
   let solved = 0;
+  const correctAnswers: number[] = [];
 
   for (let step = 0; step < 8 && solved < 2; step += 1) {
     if (html.includes('data-problem="open"')) {
@@ -122,6 +125,7 @@ test('a child solves a set without receiving answers early, and the parent sees 
       const solve = symbols[symbol];
       assert.ok(solve);
       const answer = solve(left, right);
+      correctAnswers.push(answer);
       if (answer !== left && answer !== right) {
         assert.equal(showsNumber(html, answer), false);
       }
@@ -131,8 +135,14 @@ test('a child solves a set without receiving answers early, and the parent sees 
       page = await follow(app, jar, await send(app, jar, action[1], { answer: String(given) }));
       html = await page.text();
       assert.match(html, /data-problem="review"/);
-      assert.match(html, new RegExp(`= ${answer < 0 ? `\\${String(answer)}` : answer}`));
-      if (solved === 0) assert.match(html, /Not this time/);
+      if (solved === 0) {
+        assert.match(html, /Try again/);
+        if (answer !== left && answer !== right) {
+          assert.equal(showsNumber(html, answer, 'data-problem="review"'), false);
+        }
+      } else {
+        assert.match(html, /Yes/);
+      }
       solved += 1;
     }
     const next = html.match(/id="next-step"[^>]*href="([^"]+)"|href="([^"]+)"[^>]*id="next-step"/);
@@ -144,9 +154,32 @@ test('a child solves a set without receiving answers early, and the parent sees 
 
   assert.match(html, /data-score="done"/);
   assert.match(html, /1\/2/);
+  for (const value of correctAnswers) {
+    assert.match(html, new RegExp(`= ${value}`));
+  }
+
+  const awards = await send(app, jar, '/practice/achievements');
+  const awardsHtml = await awards.text();
+  assert.match(awardsHtml, /1 star/);
+  assert.match(awardsHtml, /First practice/);
+  assert.match(awardsHtml, /data-state="earned"/);
+  assert.match(awardsHtml, /Quick answers/);
+  assert.match(awardsHtml, /data-state="in_progress"/);
+  assert.match(awardsHtml, /2 of 5 quick answers/);
 
   const parent = await send(app, jar, '/parent');
   const parentHtml = await parent.text();
   assert.match(parentHtml, /Mina/);
   assert.match(parentHtml, /1\/2/);
+  assert.match(parentHtml, /second/);
+  const detailHref = parentHtml.match(/href="(\/parent\/attempts\/[^"]+)"/);
+  assert.ok(detailHref?.[1]);
+  const detail = await send(app, jar, detailHref[1]);
+  const detailHtml = await detail.text();
+  assert.match(detailHtml, /Started /);
+  assert.match(detailHtml, /Finished /);
+  assert.match(detailHtml, /Total time/);
+  assert.match(detailHtml, /Wrong/);
+  assert.match(detailHtml, /Correct/);
+  assert.match(detailHtml, /second/);
 });
