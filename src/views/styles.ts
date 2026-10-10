@@ -344,8 +344,9 @@ input, select {
 }
 .timing-list li {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.35rem 1rem;
   padding: 0.7rem 0;
   border-top: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
