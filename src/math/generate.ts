@@ -1,6 +1,7 @@
-export const OPERATION_CHOICES = ['add', 'subtract', 'multiply', 'divide', 'mixed'] as const;
+export const OPERATION_CHOICES = ['add', 'subtract', 'multiply', 'divide', 'add_subtract', 'mixed'] as const;
 export const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 export const OPERATIONS = ['add', 'subtract', 'multiply', 'divide'] as const;
+const ADD_OR_SUBTRACT = ['add', 'subtract'] as const;
 
 export type Operation = (typeof OPERATIONS)[number];
 export type OperationChoice = (typeof OPERATION_CHOICES)[number];
@@ -71,6 +72,18 @@ export function generateSet(
   if (!Number.isInteger(count) || count < 1) {
     throw new Error('count must be a positive integer');
   }
+  if (!isOperationChoice(choice)) throw new Error('Unknown operation');
+  if (!isDifficulty(difficulty)) throw new Error('Unknown difficulty');
+  if (choice === 'add_subtract' && count >= 2) {
+    const problems = [
+      build('add', difficulty, rng),
+      build('subtract', difficulty, rng),
+    ];
+    for (let index = 2; index < count; index += 1) {
+      problems.push(generateProblem('add_subtract', difficulty, rng));
+    }
+    return shuffle(problems, rng);
+  }
   const problems: Problem[] = [];
   for (let index = 0; index < count; index += 1) {
     problems.push(generateProblem(choice, difficulty, rng));
@@ -79,8 +92,9 @@ export function generateSet(
 }
 
 function pickOperation(choice: OperationChoice, rng: () => number): Operation {
-  if (choice !== 'mixed') return choice;
-  return OPERATIONS[int(rng, 0, OPERATIONS.length - 1)] ?? 'add';
+  if (choice === 'mixed') return OPERATIONS[int(rng, 0, OPERATIONS.length - 1)] ?? 'add';
+  if (choice === 'add_subtract') return ADD_OR_SUBTRACT[int(rng, 0, ADD_OR_SUBTRACT.length - 1)] ?? 'add';
+  return choice;
 }
 
 function build(operation: Operation, difficulty: Difficulty, rng: () => number): Problem {
@@ -115,6 +129,19 @@ function build(operation: Operation, difficulty: Difficulty, rng: () => number):
       return { operation, left: right * answer, right, answer };
     }
   }
+}
+
+function shuffle<T>(items: T[], rng: () => number): T[] {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swap = int(rng, 0, index);
+    const current = copy[index];
+    const other = copy[swap];
+    if (current === undefined || other === undefined) continue;
+    copy[index] = other;
+    copy[swap] = current;
+  }
+  return copy;
 }
 
 function int(rng: () => number, min: number, max: number): number {

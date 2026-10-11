@@ -157,6 +157,14 @@ export async function childForPin(
   return matches[0] ?? null;
 }
 
+type StoredSet = { operation: string; operation_mix: string };
+
+/** `add_subtract` is stored as mixed plus operation_mix so the original CHECK stays valid. */
+function presentOperation<T extends StoredSet>(row: T): Omit<T, 'operation_mix'> {
+  const { operation_mix: mix, ...rest } = row;
+  return { ...rest, operation: mix === 'add_subtract' ? 'add_subtract' : row.operation };
+}
+
 export async function createProblemSet(
   db: SqlDatabase,
   input: {
@@ -168,12 +176,14 @@ export async function createProblemSet(
 ): Promise<string> {
   const setId = randomUUID();
   const now = new Date().toISOString();
+  const storedOperation = input.operation === 'add_subtract' ? 'mixed' : input.operation;
+  const operationMix = input.operation === 'add_subtract' ? 'add_subtract' : '';
   const statements: SqlStatement[] = [
     {
       sql: `INSERT INTO problem_sets
-        (id, parent_id, operation, difficulty, problem_count, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)`,
-      params: [setId, input.parentId, input.operation, input.difficulty, input.problems.length, now],
+        (id, parent_id, operation, operation_mix, difficulty, problem_count, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      params: [setId, input.parentId, storedOperation, operationMix, input.difficulty, input.problems.length, now],
     },
   ];
   input.problems.forEach((problem, index) => {
@@ -197,11 +207,12 @@ export async function createProblemSet(
 }
 
 export async function listSets(db: SqlDatabase, parentId: string): Promise<ProblemSetRow[]> {
-  return db.all<ProblemSetRow>(
-    `SELECT id, parent_id, operation, difficulty, problem_count, created_at
+  const rows = await db.all<ProblemSetRow & StoredSet>(
+    `SELECT id, parent_id, operation, operation_mix, difficulty, problem_count, created_at
      FROM problem_sets WHERE parent_id = ? ORDER BY created_at DESC LIMIT 30`,
     [parentId],
   );
+  return rows.map(presentOperation);
 }
 
 export async function getSetForParent(
@@ -209,17 +220,18 @@ export async function getSetForParent(
   setId: string,
   parentId: string,
 ): Promise<ProblemSetRow | undefined> {
-  return db.get<ProblemSetRow>(
-    `SELECT id, parent_id, operation, difficulty, problem_count, created_at
+  const row = await db.get<ProblemSetRow & StoredSet>(
+    `SELECT id, parent_id, operation, operation_mix, difficulty, problem_count, created_at
      FROM problem_sets WHERE id = ? AND parent_id = ?`,
     [setId, parentId],
   );
+  return row ? presentOperation(row) : undefined;
 }
 
 export async function listScores(db: SqlDatabase, parentId: string): Promise<ScoreRow[]> {
-  return db.all<ScoreRow>(
+  const rows = await db.all<ScoreRow & StoredSet>(
     `SELECT a.id, a.set_id, a.child_id, a.correct_count, a.total_count, a.started_at, a.finished_at,
-            s.operation, s.difficulty, c.display_name,
+            s.operation, s.operation_mix, s.difficulty, c.display_name,
             (SELECT COALESCE(SUM(aa.duration_ms), 0) FROM attempt_answers aa WHERE aa.attempt_id = a.id) AS total_ms
      FROM attempts a
      JOIN problem_sets s ON s.id = a.set_id
@@ -229,6 +241,7 @@ export async function listScores(db: SqlDatabase, parentId: string): Promise<Sco
      LIMIT 40`,
     [parentId],
   );
+  return rows.map(presentOperation);
 }
 
 export async function openAttemptsForChild(
@@ -308,9 +321,9 @@ export async function getSessionForParent(
   attemptId: string,
   parentId: string,
 ): Promise<ParentSession | undefined> {
-  return db.get<ParentSession>(
+  const row = await db.get<ParentSession & StoredSet>(
     `SELECT a.id, a.set_id, a.child_id, a.correct_count, a.total_count, a.started_at, a.finished_at,
-            s.operation, s.difficulty, c.display_name,
+            s.operation, s.operation_mix, s.difficulty, c.display_name,
             (SELECT COALESCE(SUM(aa.duration_ms), 0) FROM attempt_answers aa WHERE aa.attempt_id = a.id) AS total_ms
      FROM attempts a
      JOIN problem_sets s ON s.id = a.set_id
@@ -318,6 +331,7 @@ export async function getSessionForParent(
      WHERE a.id = ? AND c.parent_id = ?`,
     [attemptId, parentId],
   );
+  return row ? presentOperation(row) : undefined;
 }
 
 export async function listSessionQuestions(

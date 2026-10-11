@@ -16,7 +16,7 @@ Compose starts the app with a local SQLite file on a Docker volume. No other ser
 
 1. Create a parent account with an email and password.
 2. Add a child: a display name and a 4 to 6 digit PIN.
-3. Generate a set: operation (add, subtract, multiply, divide, or mixed), difficulty, and how many problems.
+3. Generate a set: operation, difficulty, and how many problems. Mixed uses all four operations. Add and subtract uses only those two, and a set of two or more problems includes both.
 4. Open Practice, enter the child's name and PIN, and start the set.
 5. Solve one problem at a time. A wrong answer says try again, and the correct answer waits until the set is finished.
 6. Achievements track stars (one per correct answer) and badges. Each one is locked, in progress, or earned.

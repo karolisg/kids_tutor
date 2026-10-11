@@ -10,6 +10,8 @@ export function operationLabel(operation: string): string {
       return 'Multiplication';
     case 'divide':
       return 'Division';
+    case 'add_subtract':
+      return 'Add and subtract';
     case 'mixed':
       return 'Mixed operations';
     default:

@@ -110,7 +110,10 @@ describe('generateSet', () => {
           assert.ok(Number.isInteger(problem.left));
           assert.ok(Number.isInteger(problem.right));
           assert.ok(Number.isInteger(problem.answer));
-          if (operation !== 'mixed') assert.equal(problem.operation, operation);
+          if (operation !== 'mixed' && operation !== 'add_subtract') assert.equal(problem.operation, operation);
+          if (operation === 'add_subtract') {
+            assert.ok(problem.operation === 'add' || problem.operation === 'subtract');
+          }
           if (problem.operation === 'divide') {
             assert.notEqual(problem.right, 0);
             assert.equal(problem.left, problem.right * problem.answer);
@@ -122,6 +125,23 @@ describe('generateSet', () => {
         }
       }
     }
+  });
+
+  it('mixes only addition and subtraction, and includes both when there is room', () => {
+    for (const difficulty of DIFFICULTIES) {
+      const problems = generateSet('add_subtract', difficulty, 12, mulberry32(21 + difficulty.length));
+      const used = new Set(problems.map((problem) => problem.operation));
+      assert.deepEqual([...used].sort(), ['add', 'subtract']);
+      for (const problem of problems) {
+        assert.notEqual(problem.operation, 'multiply');
+        assert.notEqual(problem.operation, 'divide');
+      }
+    }
+    const again = generateSet('add_subtract', 'medium', 12, mulberry32(21 + 'medium'.length));
+    assert.deepEqual(again, generateSet('add_subtract', 'medium', 12, mulberry32(21 + 'medium'.length)));
+    const single = generateSet('add_subtract', 'easy', 1, sequence([0, 0, 0]));
+    assert.equal(single.length, 1);
+    assert.ok(single[0]?.operation === 'add' || single[0]?.operation === 'subtract');
   });
 
   it('rejects a count that is not a positive integer', () => {
