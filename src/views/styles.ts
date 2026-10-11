@@ -230,6 +230,13 @@ input, select {
 
 .child-name { font-weight: 700; }
 
+.child-pin {
+  margin-top: 0.15rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+
 .score a {
   display: flex;
   flex-wrap: wrap;

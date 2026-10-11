@@ -1,6 +1,5 @@
 import type { Context, Hono } from 'hono';
 import type { ParentRow } from '../auth/session.js';
-import { hashSecret } from '../auth/password.js';
 import { cleanCount, cleanName, cleanPin, field } from '../http/read.js';
 import { difficultyLabel, equation, formatDuration, formatWhen, operationLabel } from '../math/format.js';
 import { generateSet, isDifficulty, isOperationChoice } from '../math/generate.js';
@@ -38,7 +37,7 @@ export function registerParentRoutes(app: Hono<AppEnv>): void {
     const db = c.get('db');
     const existing = await findChildByNameForParent(db, parent.id, name);
     if (existing) return dashboard(c, parent, 'You already have a child with that name.', 400);
-    await createChild(db, parent.id, name, await hashSecret(pin));
+    await createChild(db, parent.id, name, pin);
     return c.redirect('/parent', 303);
   });
 
@@ -147,7 +146,12 @@ async function dashboard(
             {children.map((child) => (
               <li key={child.id}>
                 <div class="child-name">{child.display_name}</div>
-                <div class="hint">Added {formatWhen(child.created_at)}. The PIN stays hidden.</div>
+                {child.pin ? (
+                  <div class="child-pin">PIN {child.pin}</div>
+                ) : (
+                  <div class="hint">This PIN was saved before it could be shown again.</div>
+                )}
+                <div class="hint">Added {formatWhen(child.created_at)}</div>
               </li>
             ))}
           </ul>
@@ -164,7 +168,7 @@ async function dashboard(
               <button class="button" type="submit">Add child</button>
             </div>
           </form>
-          <p class="hint">4 to 6 digits. Your child types this name and PIN to practice.</p>
+          <p class="hint">4 to 6 digits. The PIN stays on this page for you. A signed-in child does not see it.</p>
         </section>
         <section class="card">
           <h2>New set</h2>

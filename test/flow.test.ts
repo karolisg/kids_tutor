@@ -105,6 +105,8 @@ test('a child solves a set without receiving answers early, and the parent sees 
   const sets = await follow(app, jar, loggedIn);
   const setsHtml = await sets.text();
   assert.match(setsHtml, /Choose a set/);
+  assert.equal(setsHtml.includes('PIN 2468'), false);
+  assert.equal(setsHtml.includes('class="child-pin"'), false);
   const start = setsHtml.match(/action="(\/practice\/sets\/[^"]+\/start)"/);
   assert.ok(start?.[1]);
 
@@ -170,6 +172,7 @@ test('a child solves a set without receiving answers early, and the parent sees 
   const parent = await send(app, jar, '/parent');
   const parentHtml = await parent.text();
   assert.match(parentHtml, /Mina/);
+  assert.match(parentHtml, /PIN 2468/);
   assert.match(parentHtml, /1\/2/);
   assert.match(parentHtml, /second/);
   const detailHref = parentHtml.match(/href="(\/parent\/attempts\/[^"]+)"/);
@@ -182,4 +185,61 @@ test('a child solves a set without receiving answers early, and the parent sees 
   assert.match(detailHtml, /Wrong/);
   assert.match(detailHtml, /Correct/);
   assert.match(detailHtml, /second/);
+});
+
+test('a parent can read every child PIN, and a child session does not reveal them', async () => {
+  const db = openSqlite(':memory:');
+  await migrate(db, path.resolve('migrations'));
+  const app = createApp({ db, sessionSecret: 'test-session-secret-value' });
+  const parentJar = new Map<string, string>();
+
+  const registered = await follow(
+    app,
+    parentJar,
+    await send(app, parentJar, '/register', {
+      email: 'pins@example.com',
+      password: 'correct-horse',
+      password_confirm: 'correct-horse',
+    }),
+  );
+  assert.equal(registered.status, 200);
+
+  for (const child of [
+    { display_name: 'Ada', pin: '1357' },
+    { display_name: 'Bo', pin: '8024' },
+  ]) {
+    const added = await follow(app, parentJar, await send(app, parentJar, '/parent/children', child));
+    assert.equal(added.status, 200);
+  }
+
+  const dashboard = await send(app, parentJar, '/parent');
+  const dashboardHtml = await dashboard.text();
+  assert.match(dashboardHtml, /Ada/);
+  assert.match(dashboardHtml, /PIN 1357/);
+  assert.match(dashboardHtml, /Bo/);
+  assert.match(dashboardHtml, /PIN 8024/);
+
+  const childJar = new Map<string, string>();
+  const loggedIn = await follow(
+    app,
+    childJar,
+    await send(app, childJar, '/practice/login', { display_name: 'Ada', pin: '1357' }),
+  );
+  assert.match(await loggedIn.text(), /Choose a set/);
+
+  for (const path of ['/practice/sets', '/practice/achievements', '/practice', '/']) {
+    const page = await follow(app, childJar, await send(app, childJar, path));
+    const html = await page.text();
+    assert.equal(html.includes('PIN 1357'), false, path);
+    assert.equal(html.includes('PIN 8024'), false, path);
+    assert.equal(html.includes('class="child-pin"'), false, path);
+    assert.equal(html.includes('8024'), false, path);
+  }
+
+  const parentOnly = await follow(app, childJar, await send(app, childJar, '/parent'));
+  const parentOnlyHtml = await parentOnly.text();
+  assert.match(parentOnlyHtml, /Welcome back/);
+  assert.equal(parentOnlyHtml.includes('PIN 1357'), false);
+  assert.equal(parentOnlyHtml.includes('PIN 8024'), false);
+  assert.equal(parentOnlyHtml.includes('8024'), false);
 });

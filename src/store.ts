@@ -70,6 +70,7 @@ export type ChildSummary = {
   id: string;
   parent_id: string;
   display_name: string;
+  pin: string;
   created_at: string;
 };
 
@@ -98,7 +99,7 @@ export async function findParentByEmail(db: SqlDatabase, email: string): Promise
 
 export async function listChildren(db: SqlDatabase, parentId: string): Promise<ChildSummary[]> {
   return db.all<ChildSummary>(
-    `SELECT id, parent_id, display_name, created_at
+    `SELECT id, parent_id, display_name, pin, created_at
      FROM children WHERE parent_id = ? ORDER BY created_at ASC`,
     [parentId],
   );
@@ -120,12 +121,13 @@ export async function createChild(
   db: SqlDatabase,
   parentId: string,
   displayName: string,
-  pinHash: string,
+  pin: string,
 ): Promise<string> {
   const id = randomUUID();
   await db.run(
-    'INSERT INTO children (id, parent_id, display_name, pin_hash, created_at) VALUES (?, ?, ?, ?, ?)',
-    [id, parentId, displayName, pinHash, new Date().toISOString()],
+    `INSERT INTO children (id, parent_id, display_name, pin_hash, pin, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, parentId, displayName, await hashSecret(pin), pin, new Date().toISOString()],
   );
   return id;
 }
