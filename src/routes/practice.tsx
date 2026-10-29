@@ -3,7 +3,7 @@ import type { ChildRow } from '../auth/session.js';
 import { clearSession, startSession, writeSessionCookie } from '../auth/session.js';
 import { cleanName, cleanPin, field, parseIntegerAnswer } from '../http/read.js';
 import { checkAnswer } from '../math/generate.js';
-import { difficultyLabel, equation, formatWhen, operationLabel, scorePhrase } from '../math/format.js';
+import { equation, formatWhen, operationLabel, scorePhrase, setDetails } from '../math/format.js';
 import { buildAchievements, starLabel } from '../rewards/achievements.js';
 import {
   answerForProblem,
@@ -89,7 +89,7 @@ export function registerPracticeRoutes(app: Hono<AppEnv>): void {
                 <section class="card" key={set.id}>
                   <h2>{operationLabel(set.operation)}</h2>
                   <p class="hint">
-                    {difficultyLabel(set.difficulty)} · {set.problem_count} problems · {formatWhen(set.created_at)}
+                    {setDetails(set.difficulty, set.max_number, set.problem_count, formatWhen(set.created_at))}
                   </p>
                   <form method="post" action={`/practice/sets/${set.id}/start`}>
                     <button class="button" type="submit">{label}</button>

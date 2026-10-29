@@ -253,9 +253,12 @@ input, select {
 
 .generate-grid, .inline-fields { display: grid; gap: 0.75rem; }
 @media (min-width: 700px) {
-  .generate-grid { grid-template-columns: 1.3fr 1fr 7rem auto; align-items: end; }
   .inline-fields { grid-template-columns: 1fr 9rem auto; align-items: end; }
-  .generate-grid label, .inline-fields label { margin: 0; }
+  .inline-fields label { margin: 0; }
+}
+@media (min-width: 880px) {
+  .generate-grid { grid-template-columns: 1.4fr 6.5rem 0.9fr 5.5rem auto; align-items: end; }
+  .generate-grid label { margin: 0; }
 }
 
 .progress {

@@ -35,6 +35,13 @@ export function cleanCount(input: string): number | null {
   return count;
 }
 
+export function cleanMaxNumber(input: string): number | null {
+  if (!/^\d+$/.test(input.trim())) return null;
+  const maxNumber = Number(input.trim());
+  if (!Number.isInteger(maxNumber) || maxNumber < 1 || maxNumber > 100) return null;
+  return maxNumber;
+}
+
 /** Whole-number answers, including a leading minus for hard subtraction. */
 export function parseIntegerAnswer(input: string): number | null {
   const trimmed = input.trim();

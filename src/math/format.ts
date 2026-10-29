@@ -19,6 +19,16 @@ export function operationLabel(operation: string): string {
   }
 }
 
+export function maxPhrase(maxNumber: number | null): string {
+  return maxNumber === null ? '' : `up to ${maxNumber}`;
+}
+
+export function setDetails(difficulty: string, maxNumber: number | null, count: number, when: string): string {
+  return [difficultyLabel(difficulty), maxPhrase(maxNumber), `${count} problems`, when]
+    .filter((part) => part !== '')
+    .join(' · ');
+}
+
 export function difficultyLabel(difficulty: string): string {
   switch (difficulty) {
     case 'easy':

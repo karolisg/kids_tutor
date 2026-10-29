@@ -10,6 +10,7 @@ export type ProblemSetRow = {
   parent_id: string;
   operation: string;
   difficulty: string;
+  max_number: number | null;
   problem_count: number;
   created_at: string;
 };
@@ -173,6 +174,7 @@ export async function createProblemSet(
     parentId: string;
     operation: OperationChoice;
     difficulty: Difficulty;
+    maxNumber: number;
     problems: Problem[];
   },
 ): Promise<string> {
@@ -183,9 +185,18 @@ export async function createProblemSet(
   const statements: SqlStatement[] = [
     {
       sql: `INSERT INTO problem_sets
-        (id, parent_id, operation, operation_mix, difficulty, problem_count, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      params: [setId, input.parentId, storedOperation, operationMix, input.difficulty, input.problems.length, now],
+        (id, parent_id, operation, operation_mix, difficulty, max_number, problem_count, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      params: [
+        setId,
+        input.parentId,
+        storedOperation,
+        operationMix,
+        input.difficulty,
+        input.maxNumber,
+        input.problems.length,
+        now,
+      ],
     },
   ];
   input.problems.forEach((problem, index) => {
@@ -210,7 +221,7 @@ export async function createProblemSet(
 
 export async function listSets(db: SqlDatabase, parentId: string): Promise<ProblemSetRow[]> {
   const rows = await db.all<ProblemSetRow & StoredSet>(
-    `SELECT id, parent_id, operation, operation_mix, difficulty, problem_count, created_at
+    `SELECT id, parent_id, operation, operation_mix, difficulty, max_number, problem_count, created_at
      FROM problem_sets WHERE parent_id = ? ORDER BY created_at DESC LIMIT 30`,
     [parentId],
   );
@@ -223,7 +234,7 @@ export async function getSetForParent(
   parentId: string,
 ): Promise<ProblemSetRow | undefined> {
   const row = await db.get<ProblemSetRow & StoredSet>(
-    `SELECT id, parent_id, operation, operation_mix, difficulty, problem_count, created_at
+    `SELECT id, parent_id, operation, operation_mix, difficulty, max_number, problem_count, created_at
      FROM problem_sets WHERE id = ? AND parent_id = ?`,
     [setId, parentId],
   );

@@ -93,10 +93,15 @@ test('a child solves a set without receiving answers early, and the parent sees 
   const created = await send(app, jar, '/parent/sets', {
     operation: 'multiply',
     difficulty: 'easy',
+    max_number: '10',
     count: '2',
   });
   const withSet = await follow(app, jar, created);
-  assert.match(await withSet.text(), /Multiplication/);
+  const withSetHtml = await withSet.text();
+  assert.match(withSetHtml, /Multiplication/);
+  assert.match(withSetHtml, /up to 10/);
+  assert.match(withSetHtml, /name="max_number"/);
+  assert.match(withSetHtml, /Add and subtract/);
 
   const loggedIn = await send(app, jar, '/practice/login', {
     display_name: 'Mina',

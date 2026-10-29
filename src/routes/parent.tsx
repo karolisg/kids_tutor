@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono';
 import type { ParentRow } from '../auth/session.js';
-import { cleanCount, cleanName, cleanPin, field } from '../http/read.js';
-import { difficultyLabel, equation, formatDuration, formatWhen, operationLabel } from '../math/format.js';
+import { cleanCount, cleanMaxNumber, cleanName, cleanPin, field } from '../http/read.js';
+import { difficultyLabel, equation, formatDuration, formatWhen, operationLabel, setDetails } from '../math/format.js';
 import { generateSet, isDifficulty, isOperationChoice } from '../math/generate.js';
 import {
   createChild,
@@ -47,15 +47,17 @@ export function registerParentRoutes(app: Hono<AppEnv>): void {
     const body = await c.req.parseBody();
     const operation = field(body, 'operation');
     const difficulty = field(body, 'difficulty');
+    const maxNumber = cleanMaxNumber(field(body, 'max_number'));
     const count = cleanCount(field(body, 'count'));
-    if (!isOperationChoice(operation) || !isDifficulty(difficulty) || count === null) {
-      return dashboard(c, parent, 'Choose an operation, a difficulty, and a count from 1 to 20.', 400);
+    if (!isOperationChoice(operation) || !isDifficulty(difficulty) || maxNumber === null || count === null) {
+      return dashboard(c, parent, 'Choose an operation, a max number from 1 to 100, a difficulty, and a count from 1 to 20.', 400);
     }
-    const problems = generateSet(operation, difficulty, count);
+    const problems = generateSet(operation, difficulty, count, maxNumber);
     await createProblemSet(c.get('db'), {
       parentId: parent.id,
       operation,
       difficulty,
+      maxNumber,
       problems,
     });
     return c.redirect('/parent', 303);
@@ -172,7 +174,7 @@ async function dashboard(
         </section>
         <section class="card">
           <h2>New set</h2>
-          <p class="hint">Problems are written on the server. Children never see the answers ahead of time.</p>
+          <p class="hint">Problems are written on the server. Both numbers in a problem are at most the max number.</p>
           <form method="post" action="/parent/sets">
             <div class="generate-grid">
               <label>
@@ -185,6 +187,10 @@ async function dashboard(
                   <option value="add_subtract">Add and subtract</option>
                   <option value="mixed">Mixed</option>
                 </select>
+              </label>
+              <label>
+                <span>Max number</span>
+                <input name="max_number" type="number" min={1} max={100} value="10" required />
               </label>
               <label>
                 <span>Difficulty</span>
@@ -210,7 +216,7 @@ async function dashboard(
               <li key={set.id}>
                 <strong>{operationLabel(set.operation)}</strong>
                 <div class="set-meta">
-                  {difficultyLabel(set.difficulty)} · {set.problem_count} problems · {formatWhen(set.created_at)}
+                  {setDetails(set.difficulty, set.max_number, set.problem_count, formatWhen(set.created_at))}
                 </div>
               </li>
             ))}
